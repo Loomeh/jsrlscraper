@@ -1,7 +1,6 @@
 import os
 import platform
 import subprocess
-import time
 import requests
 import logging
 import sys
@@ -12,6 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from urllib.parse import unquote
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,14 +48,58 @@ if wayback:
     logger.info("Capturing the January 2020 Wayback Machine archive.")
 
 # URL to scrape
-url = "https://web.archive.org/web/20201213013328/https://jetsetradio.live/tv/APP/index.html" if wayback else "https://jetsetradio.live/tv/APP/index.html"
+url = "https://web.archive.org/web/20200715234245/http://jetsetradio.live/" if wayback else "https://jetsetradio.live/tv/APP/index.html"
 logger.info(f"Loading the webpage: {url}")
+
+if wayback:
+    logger.info("Capturing the January 2020 Wayback Machine archive.")
+
+    # Initial click to enter the site
+    try:
+        logger.info("Attempting to click anywhere on the screen to enter the site.")
+        action = ActionChains(driver)
+        action.move_by_offset(500, 500).click().perform()  # Adjust the offset values as needed
+        logger.info("Successfully clicked on the screen.")
+    except Exception as e:
+        logger.error(f"Error clicking on the screen: {e}")
+
+    # Wait for the page to react
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.ID, 'tvButton'))
+    )
+
+    # Find and click the 'tvButton'
+    try:
+        logger.info("Attempting to click on the 'tvButton'.")
+        tv_button = driver.find_element(By.ID, "tvButton")
+        tv_button.click()
+        logger.info("Successfully clicked on the 'tvButton'.")
+    except Exception as e:
+        logger.error(f"Error clicking on the 'tvButton': {e}")
+
+    # Wait for the next page to load
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.TAG_NAME, 'body'))
+    )
+
+    # Click on the screen again
+    try:
+        logger.info("Attempting to click on the screen again.")
+        action = ActionChains(driver)
+        action.move_by_offset(500, 500).click().perform()  # Adjust the offset values as needed
+        logger.info("Successfully clicked on the screen again.")
+    except Exception as e:
+        logger.error(f"Error clicking on the screen again: {e}")
+
+# Proceed with the rest of the script as usual
 
 # Load the webpage
 driver.get(url)
 
-# Add a delay to ensure page is loaded (increase if necessary)
-time.sleep(5)
+# Wait for the page to load completely
+WebDriverWait(driver, 20).until(
+    EC.presence_of_element_located((By.TAG_NAME, 'body'))
+)
 
 # Click anywhere on the screen (e.g., center of the screen)
 try:
@@ -78,15 +122,16 @@ successful_downloads = 0
 def download_video(video_url, directory='downloaded_videos'):
     global successful_downloads  # Use the global counter
     
-    if not video_url:
-        logger.warning("No video URL found.")
+    if not video_url or "undefined.mp4" in video_url:
         return
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
     }
 
-    file_name = os.path.join(directory, video_url.split('/')[-1])
+    # Decode the video URL to handle spaces and other characters
+    video_url = unquote(video_url)
+    file_name = os.path.join(directory, os.path.basename(video_url))
 
     if os.path.exists(file_name):
         logger.info(f"File {file_name} already exists. Skipping download.")
@@ -127,12 +172,13 @@ while True:
             logger.warning("Video URL is empty. Skipping this video.")
             continue
 
-        # Debugging: Print the retrieved video URL
-        logger.info(f"Video URL found: {video_url}")
-        
-        # Download the video
-        download_video(video_url)
-        
+        # Log and download the video if it's not undefined.mp4
+        if "undefined.mp4" not in video_url:
+            logger.info(f"Video URL found: {video_url}")
+            download_video(video_url)
+        else:
+            pass  # Do nothing for undefined.mp4
+
         # Find and click the skip button
         logger.info("Waiting for the skip button to be clickable.")
         skip_button = WebDriverWait(driver, 20).until(
@@ -141,9 +187,10 @@ while True:
         skip_button.click()
         logger.info("Clicked the skip button.")
         
-        # Allow some time for the next video to load
-        logger.info("Waiting for the next video to load.")
-        time.sleep(5)
+        # Wait for the next video to load
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, 'videoFrame'))
+        )
     
     except Exception as e:
         logger.error(f"An error occurred: {e}")
